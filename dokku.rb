@@ -36,7 +36,7 @@ when "receive"
   image = "dokku/#{app}"
   puts "-----> Cleaning up ..."
   run("ruby", $0, "cleanup")
-  puts "-----> Building $APP ..."
+  puts "-----> Building #{app} ..."
   IO.popen(["dokku", "build", app], "w") do |io|
     io.write($stdin.read)
   end
@@ -45,7 +45,8 @@ when "receive"
   puts "-----> Deploying #{app} ..."
   run("ruby", "dokku", "deploy", app)
   puts "=====> Application deployed:"
-  puts "       $(dokku url #{app})"
+  url = `dokku url #{app}`.strip
+  puts "       #{url}"
   puts
 when "build"
   app = ARGV[1]
@@ -75,6 +76,7 @@ when "release"
     args = ["docker", "run", "-i", "-a", "stdin", image, "/bin/bash", "-c", "mkdir -p /app/.profile.d && cat > /app/.profile.d/app-env.sh"]
     id = Open.popen3(*args) do |i, o, e|
       i.write(content)
+      i.close
       o.read
     end.strip
     run("test $(docker wait #{id}) -eq 0")
@@ -128,7 +130,7 @@ when "cleanup"
   # delete all non-running container
   Process.spawn("docker ps -a | grep 'Exit' | awk '{print $1}' | xargs docker rm &> /dev/null")
   # delete unused images
-  Process.spawn("docker images | grep '<none>' | awk '{print $3}' | xargs docker rmi &> /dev/null &")
+  Process.spawn("docker images | grep '<none>' | awk '{print $3}' | xargs docker rmi &> /dev/null")
 when "plugins"
   puts Dir[File.join(PLUGIN_PATH, "*")].select(&File.method(:directory?))
 when "plugins-install"
@@ -148,6 +150,7 @@ when "help", nil
 EOF
   Open3.popen3("pluginhook commands help") do |i, o|
     i.write(help)
+    i.close
     puts o.read.lines.sort
   end
 else
