@@ -10,7 +10,7 @@ dokkurc = File.join(DOKKU_ROOT, "dokkurc")
 
 File.file?(dokkurc) and eval(File.read(dokkurc))
 
-unless ENV["USER"] == "dokku" or ARGV[0].start_with? "plugins-install"
+unless ENV["USER"] == "dokku" or String(ARGV[0]).start_with? "plugins-install"
   system('sudo', '-u', 'dokku', '-H', 'ruby', $0, ARGV.join(' '))
   exit
 end
