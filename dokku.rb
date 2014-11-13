@@ -1,19 +1,22 @@
 #!/usr/bin/env ruby
 
-require 'open3'
-require 'shellwords'
+DOKKU_TRACE = ENV["DOKKU_TRACE"]
+require 'tracer' and Tracer.on if DOKKU_TRACE
 
 DOKKU_ROOT = ENV["DOKKU_ROOT"] ||= "/home/dokku"
 PLUGIN_PATH = ENV["PLUGIN_PATH"] ||= "/var/lib/dokku/plugins"
-
-dokkurc = File.join(DOKKU_ROOT, "dokkurc")
-
-File.file?(dokkurc) and eval(File.read(dokkurc))
 
 unless ENV["USER"] == "dokku" or String(ARGV[0]).start_with? "plugins-install"
   system('sudo', '-u', 'dokku', '-H', 'ruby', $0, ARGV.join(' '))
   exit
 end
+
+require 'open3'
+require 'shellwords'
+
+dokkurc = File.join(DOKKU_ROOT, "dokkurc")
+
+File.file?(dokkurc) and eval(File.read(dokkurc))
 
 def run arg1, *argn
   if system(arg1, *argn).nil?
