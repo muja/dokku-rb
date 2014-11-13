@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
 require 'open3'
+require 'shellwords'
 
 DOKKU_ROOT = ENV["DOKKU_ROOT"] ||= "/home/dokku"
 PLUGIN_PATH = ENV["PLUGIN_PATH"] ||= "/var/lib/dokku/plugins"
@@ -14,20 +15,32 @@ unless ENV["USER"] == "dokku" or ARGV[0].start_with? "plugins-install"
   exit
 end
 
+def run arg1, *argn
+  if system(arg1, *argn).nil?
+    cmd = if argn.length > 1
+      arg1
+    else
+      arg1.shellsplit[0]
+    end
+    $stderr.puts("sh: command not found: #{cmd}")
+    exit 1
+  end
+end
+
 case ARGV[0]
 when "receive"
   app = ARGV[1]
   image = "dokku/#{app}"
   puts "-----> Cleaning up ..."
-  system("ruby", $0, "cleanup")
+  run("ruby", $0, "cleanup")
   puts "-----> Building $APP ..."
   IO.popen(["dokku", "build", app], "w") do |io|
     io.write($stdin.read)
   end
   puts "-----> Releasing #{app} ..."
-  system("ruby", "dokku", "release", app)
+  run("ruby", "dokku", "release", app)
   puts "-----> Deploying #{app} ..."
-  system("ruby", "dokku", "deploy", app)
+  run("ruby", "dokku", "deploy", app)
   puts "=====> Application deployed:"
   puts "       $(dokku url #{app})"
   puts
@@ -40,19 +53,19 @@ when "build"
     i.write($stdin.read)
     o.read
   end.strip
-  system("test $(docker wait #{id}) -eq 0")
-  system("docker commit #{id} #{image} > /dev/null")
+  run("test $(docker wait #{id}) -eq 0")
+  run("docker commit #{id} #{image} > /dev/null")
   Dir.mkdir cache_dir unless File.directory? cache_dir
-  system("pluginhook pre-build #{app}")
+  run("pluginhook pre-build #{app}")
   id = IO.popen(["docker", "run", "-d", "-v", "#{cache_dir}:/cache", image, "/build/builder"], "r", &:read).strip
-  system("docker attach #{id}")
-  system("test $(docker wait #{id}) -eq 0")
-  system("docker commit #{id} #{image} > /dev/null")
-  system("pluginhook post-build #{app}")
+  run("docker attach #{id}")
+  run("test $(docker wait #{id}) -eq 0")
+  run("docker commit #{id} #{image} > /dev/null")
+  run("pluginhook post-build #{app}")
 when "release"
   app = ARGV[1]
   image = "dokku/#{app}"
-  system("pluginhook pre-release #{app}")
+  run("pluginhook pre-release #{app}")
   env = File.join(DOKKU_ROOT, app, "ENV")
   if File.file? env
     content = File.read(env)
@@ -61,14 +74,14 @@ when "release"
       i.write(content)
       o.read
     end.strip
-    system("test $(docker wait #{id}) -eq 0")
-    system("docker commit #{id} #{image} > /dev/null")
+    run("test $(docker wait #{id}) -eq 0")
+    run("docker commit #{id} #{image} > /dev/null")
   end
-  system("pluginhook post-release #{app}")
+  run("pluginhook post-release #{app}")
 when "deploy"
   app = ARGV[1]
   image = "dokku/#{app}"
-  system("pluginhook pre-deploy #{app}")
+  run("pluginhook pre-deploy #{app}")
 
   container = File.join(DOKKU_ROOT, app, "CONTAINER")
 
@@ -81,7 +94,7 @@ when "deploy"
 
   # if we can't post-deploy successfully, kill new container
   kill_new = -> do
-    system("docker inspect #{id} &> /dev/null && docker kill #{id} > /dev/null")
+    run("docker inspect #{id} &> /dev/null && docker kill #{id} > /dev/null")
     ["INT", "TERM", "EXIT"].each do |sig|
       trap(sig, "DEFAULT")
     end
@@ -93,7 +106,7 @@ when "deploy"
     trap(sig, &kill_new)
   end
   puts "-----> Running pre-flight checks"
-  system("pluginhook check-deploy #{id} #{app} #{port}")
+  run("pluginhook check-deploy #{id} #{app} #{port}")
 
   # now using the new container
   File.write(container, id)
@@ -101,13 +114,13 @@ when "deploy"
   File.write(File.join(DOKKU_ROOT, app, "URL"), "http://#{DOKKU_ROOT}/HOSTNAME:#{port}")
 
   puts "-----> Running post-deploy"
-  system("pluginhook post-deploy #{app} #{port}")
+  run("pluginhook post-deploy #{app} #{port}")
   ["INT", "TERM", "EXIT"].each do |sig|
     trap(sig, "DEFAULT")
   end
 
   # kill the old container
-  system("docker inspect #{oldid} &> /dev/null && docker kill #{oldid} > /dev/null") if oldid
+  run("docker inspect #{oldid} &> /dev/null && docker kill #{oldid} > /dev/null") if oldid
 when "cleanup"
   # delete all non-running container
   Process.spawn("docker ps -a | grep 'Exit' | awk '{print $1}' | xargs docker rm &> /dev/null")
@@ -116,13 +129,13 @@ when "cleanup"
 when "plugins"
   puts Dir[File.join(PLUGIN_PATH, "*")].select(&File.method(:directory?))
 when "plugins-install"
-  system("pluginhook install")
+  run("pluginhook install")
 when "plugins-install-dependencies"
-  system("pluginhook dependencies")
+  run("pluginhook dependencies")
 when "deploy:all"
   Dir[File.join(DOKKU_ROOT, "*")].select(&File.method(:directory?)).each do |app|
     name = File.basename app
-    system("dokku deploy #{name}")
+    run("dokku deploy #{name}")
   end
 when "help", nil
   help = <<EOF
@@ -137,6 +150,6 @@ EOF
 else
   files = Dir[File.join(PLUGIN_PATH, "*", "commands")]
   files.select(&File.method(:directory?)).each do |script|
-    system(script, ARGV.join(" "))
+    run(script, ARGV.join(" "))
   end
 end
